@@ -1,0 +1,250 @@
+一、虚拟机
+1.新建虚拟机hadoop1
+2.虚拟机安装（1）设置主机名hadoop1,连接名称System eth0
+	    （2）设置ROOT密码:860222pmj
+	    （3）IP地址：192.168.121.134
+                    （4）子网掩码：255.255.255.255.0
+                    （5）默认路由：192.168.121.2
+                    （6）DNS：192.168.121.2
+3.虚拟机克隆：hadoop2、hadoop3
+                      主机名和IP地址:hadoop2 192.168.121.135
+                                              hadoop3 192.168.121.136
+4.主机配置
+	(1)vim /etc/sysconfig/network  添加：
+                    NETWORKING=yes
+	    HOSTNAME=hadoop1
+	(2)vim /etc/hosts  添加主机名和IP的映射关系
+	    192.168.121.135 hadoop1
+	    192.168.121.136 hadoop2
+	    192.168.121.137 hadoop3
+	(3)vim /etc/hostname文件中添加机器名称（一台机器一个）
+	    hadoop1
+	    hadoop2
+	    hadoop3
+	(4)关闭防火墙，关闭防火墙开机自启
+	     systemctl stop firewalld.service
+                     systemctl disable firewalld.service
+	(5)重启reboot
+	(6)查看是否配置成功:hostname
+			ping www.baidu.com
+
+二、安装配置JDK(xftp7上传三个安装包tar、hadoop、zookeeper，地址/目录下)
+1.
+cd /
+mkdir /usr/java
+mkdir hadoop
+
+2.遇到问题:安装包上传失败
+解决方法：修改目录权限 sudo chmod 777 /
+
+3.解压安装包
+	    tar -xzvf jdk-8u162-linux-x64.tar.gz -C /export/servers
+4.配置环境变量
+	vim /etc/profile
+添加
+export JAVA_HOME=/export/servers/jdk
+export HADOOP_HOME=/export/servers/hadoop-3.1.3
+export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+
+5.   ：wq保存并退出
+6.验证环境变量：source /etc/profile
+
+
+export PATH=/bin:/usr/bin:$PATH
+
+
+！！！！二操作在每台机器分布进行
+
+
+三、安装Zookeeper集群
+1.解压
+tar -zxvf zookeeper-3.4.10.tar.gz -C /export/servers/
+
+2.配置zoo.cfg文件
+进入conf目录:    cd zookeeper-3.4.10/conf/
+生成zoo.cfg文件：cp zoo_sample.cfg zoo.cfg
+修改zoo.cfg文件，修改以下内容：
+dataDir=/export/data/zookeeper/zkdata
+server.1=hadoop1:2888:3888
+server.2=hadoop2:2888:3888
+server.3=hadoop3:2888:3888
+
+3.创建一个tmp文件夹，命令如下：
+mkdir -p /export/data/zookeeper/zkdata
+
+cd /export/data/zookeeper/zkdata
+4.创建一个空文件，向该文件写入ID，命令如下：
+echo 1 > myid
+
+vi  myid
+！！！！！以上操作仅在bigdata01上使用
+
+
+配置环境变量
+export ZK_HOME=/export/servers/zookeeper-3.4.10
+export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$ZK_HOME/bin
+
+
+5.将配置好的zookeeper拷贝到其他节点(首先分别在bigdata02、bigdata03根目录下创
+建一个hadoop目录)：
+scp -r /export/servers/zookeeper-3.4.10  hadoop2:/export/servers/
+scp -r /export/servers/zookeeper-3.4.10  hadoop3:/export/servers/
+
+scp -r /export/data/zookeeper/  hadoop2:/export/data/
+scp -r /export/data/zookeeper/  hadoop3:/export/data/
+
+6.修改bigdata02、bigdata03对应/hadoop/zookeeper-3.4.13/tmp/myid内容
+
+cd /export/data/zookeeper/zkdata/
+
+在bigdata02机器上，命令如下：
+vi myid
+2
+在bigdata03机器上，命令如下：
+vi myid
+3
+
+
+scp /etc/profile hadoop2:/etc/profile
+scp /etc/profile hadoop3:/etc/profile
+
+环境变量生效
+source /etc/profile
+
+四、安装配置Hadoop集群(在bigdata01上进行）
+
+1.解压：
+	tar -xzvf hadoop-3.1.3.tar.gz -C /export/servers
+2.配置HDFS
+
+cd /hadoop/hadoop-3.1.3/etc/hadoop
+
+(1)修改hadoop-env.sh文件
+ vim hadoop-env.sh
+修改export JAVA_HOME=/export/servers/jdk
+
+(2)修改core-site.xml文件
+ vim core-site.xml
+
+<configuration>
+	<property>
+		<name>fs.defaultFS</name>
+		<value>hdfs://hadoop1:9000</value>
+	</property>
+	<property>
+		<name>hadoop.tmp.dir</name>
+		<value>/export/servers/hadoop-3.1.3/tmp</value>
+	</property>
+	<!-- 指定Zookeeper 地址 -->
+	<property>
+		<name>ha.zookeeper.quorum</name>
+		<value>hadoop1:2181，hadoop2:2181，hadoop3:2181</value>
+	</property>
+</configuration>
+
+3.修改vim hdfs-site.xml文件
+<configuration>
+	<property>
+		<name>dfs.replication</name>
+		<value>3</value>
+	</property>
+	<property>
+	<name>dfs.namenode.secondary.http-address</name>
+	<value>hadoop2:50090</value>
+	</property>
+</configuration>
+
+4.修改vim mapred-site.xml文件
+<configuration>
+<!-- 指定MapReduce运行时框架，这里指定在Yarn上，默认是local -->
+	<property>
+		<name>mapreduce.framework.name</name>
+		<value>yarn</value>
+	</property>
+</configuration>
+
+5.修改vim yarn-site.xml文件
+<configuration>
+	<property>
+		<name>yarn.resourcemanager.hostname</name>
+		<value>hadoop1</value>
+	</property>
+	<property>
+		<name>yarn.nodemanager.aux-services</name>
+		<value>mapreduce_shuffle</value>
+	</property>
+</configuration>
+
+6.修改vim workers文件。打开该配置文件，先删除里面的内容（默认localhost），然后配置如下内容。
+hadoop1
+hadoop2
+hadoop3
+
+7.将集群主节点的配置文件分发到其他子节点
+     完成Hadoop集群主节点hadoop01的配置后，还需要将系统环境配置文件、JDK安
+装目录和Hadoop安装目录分发到其他子节点hadoop02和hadoop03上，具体指令：
+
+scp  /etc/profile  hadoop2:/etc/profile
+scp  /etc/profile  hadoop3:/etc/profile
+scp -r /export/ hadoop2:/
+scp -r /export/ hadoop3:/
+
+五、配置免密码登录
+1.配置bigdata01到bigdata02、bigdata03的免密码登录。
+	(1)在bigdata01上生产一对钥匙
+		ssh-keygen -t rsa
+	(2)将公钥复制到其他节点！！！包括自己
+		ssh-copy-id bigdata01
+		ssh-copy-id bigdata02
+		ssh-copy-id bigdata03
+2.配置bigdata02到bigdata01、bigdata03的免密码登录。
+	(1)在bigdata01上生产一对钥匙
+		ssh-keygen -t rsa
+	(2)将公钥复制到其他节点！！！包括自己
+		ssh-copy-id bigdata01
+		ssh-copy-id bigdata02
+		ssh-copy-id bigdata03
+3.将配置好的Hadoop复制到其他节点：
+scp -r /hadoop/hadoop-3.1.3/ root@bigdata02:/hadoop/
+scp -r /hadoop/hadoop-3.1.3/ root@bigdata03:/hadoop/
+
+六、启动Hadoop
+1.启动zookeeper集群（！！！分别在启动zk），命令如下:
+	cd /
+	./zkServer.sh start
+   查看状态：命令如下：
+	./zkServer.sh status
+    结果应为一个leader，两个follower
+
+2.启动journalnode（分别在在bigdata01、bigdata02、bigdata03上执行），命令如下：
+	cd /hadoop/hadoop-3.1.3
+	hadoop-daemon.sh start journalnode
+   运行jps命令检验
+	bigdata01、bigdata02、bigdata03上多了JournalNode进程
+
+
+hadoop-daemon.sh start namenode
+
+hadoop-daemon.sh start datanode
+
+
+3.格式化HDFS
+！！！！！在bigdata01上执行命令:
+	hdfs namenode -format
+格式化后会在根据core-site.xml中的hadoop.tmp.dir配置生成个文件，这里我配置的
+是/hadoop/hadoop-3.1.3/tmp，然后将/hadoop/hadoop-3.1.3/tmp拷贝到
+bigdata02和bigdata03的/hadoop/hadoop-3.1.3/下。
+	scp -r /hadoop/hadoop-3.1.3/tmp/ root@bigdata02:/hadoop/hadoop-3.1.3/
+	scp -r /hadoop/hadoop-3.1.3/tmp/ root@bigdata03:/hadoop/hadoop-3.1.3/
+
+4.格式化ZK(在bigdata01上执行即可) ，命令如下：
+	hdfs zkfc -formatZK
+
+
+5.启动HDFS(在bigdata01上执行) ，命令如下：
+	sbin/start-dfs.sh
+
+6.启动YARN，命令如下：
+	sbin/start-yarn.sh
+
+7.http://bigdata01:50070
